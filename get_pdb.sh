@@ -14,6 +14,7 @@ command -v vmd  >/dev/null || { echo "vmd not found"; exit 1; }
 command -v pdb_tidy  >/dev/null || { echo "pdb_tidy (pdb-tools) not found"; exit 1; }
 command -v pdb_reres >/dev/null || { echo "pdb_reres (pdb-tools) not found"; exit 1; }
 command -v pdb_reatom >/dev/null || { echo "pdb_reatom (pdb-tools) not found"; exit 1; }
+command -v pdb_selchain >/dev/null || { echo "pdb_selchain (pdb-tools) not found"; exit 1; }
 
 # helper scripts (adjust names/paths as needed)
 ALIGN_TRAJECTORY_SCRIPT='align_trajectory.tcl'
@@ -41,16 +42,10 @@ for m in "$folder"/*; do
     [[ "$v" =~ ^-?[0-9]+$ ]] || { echo "Bad glycan param: '$v'"; exit 1; }
   done
 
-  # make Tcl lists
+  # make Tcl lists (per-subfolder, outside the run loop is fine)
   range1="{${g1_start} ${g1_end}}"
   range2="{${g2_start} ${g2_end}}"
   range3="{${g3_start} ${g3_end}}"
-
-  echo "Args to VMD:"
-  echo "  file   : $filename"
-  echo "  G1 list: $range1"
-  echo "  G2 list: $range2"
-  echo "  G3 list: $range3"
 
   # One output file per subfolder (kept inside the subfolder)
   out_file="$m/output_$(basename "$m").pdb"
@@ -60,12 +55,22 @@ for m in "$folder"/*; do
     filename="${m}/pred_dECALCrAS1000/siv.pdb_${i}/pm.pdb.B99990001.pdb"
     echo "Processing $filename"
 
-    # Run VMD with computed glycan parameters
+    if [[ ! -f "$filename" ]]; then
+      echo "Warning: missing $filename — skipping run $i."
+      continue
+    fi
+
+    # show exactly what we pass to VMD
+    echo "Args to VMD:"
+    echo "  file   : $filename"
+    echo "  G1: $g1_start..$g1_end"
+    echo "  G2: $g2_start..$g2_end"
+    echo "  G3: $g3_start..$g3_end"
+
     vmd -dispdev text -eofexit -log vmd_run.log \
     -e "$EXTRACT_GLYCANS_AND_CHAINS_SCRIPT" -args \
-    "$filename" "$range1" "$range2" "$range3"
+    "$filename" "$g1_start" "$g1_end" "$g2_start" "$g2_end" "$g3_start" "$g3_end"
 
-    # Extract first residue number of chain A from the source PDB
     starting_chain_number=$(
       pdb_tidy "$filename" \
         | pdb_selchain -A \

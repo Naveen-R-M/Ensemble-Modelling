@@ -1,30 +1,25 @@
-# extract_glycans_and_chains.tcl
-
+# Usage:
+# vmd -dispdev text -e extract_glycans_and_chains.tcl -args input.pdb g1s g1e g2s g2e g3s g3e
 proc die {msg} { puts stderr $msg ; exit 1 }
 
-if {[llength $argv] < 4} {
-    die "Usage: vmd -dispdev text -e extract_glycans_and_chains.tcl -args input.pdb {s1 e1} {s2 e2} {s3 e3}"
+if {[llength $argv] < 7} {
+    die "Usage: vmd -dispdev text -e extract_glycans_and_chains.tcl -args input.pdb g1s g1e g2s g2e g3s g3e"
 }
-set filename [lindex $argv 0]
-set g1_range [lindex $argv 1]
-set g2_range [lindex $argv 2]
-set g3_range [lindex $argv 3]
 
-# Validate: each is a list of two integers
-foreach rname {g1_range g2_range g3_range} {
-    set r [set $rname]
-    if {[catch {set n [llength $r]}] || $n != 2} {
-        die "Bad $rname='$r' (expect {start end})"
-    }
-    foreach v $r {
-        if {![string is integer -strict $v]} {
-            die "Bad value in $rname='$r' (non-integer '$v')"
-        }
+set filename  [lindex $argv 0]
+set g1_start  [lindex $argv 1]
+set g1_end    [lindex $argv 2]
+set g2_start  [lindex $argv 3]
+set g2_end    [lindex $argv 4]
+set g3_start  [lindex $argv 5]
+set g3_end    [lindex $argv 6]
+
+# Validate integers
+foreach v {g1_start g1_end g2_start g2_end g3_start g3_end} {
+    if {![string is integer -strict [set $v]]} {
+        die "Bad integer for $v='[set $v]'"
     }
 }
-lassign $g1_range g1_start g1_end
-lassign $g2_range g2_start g2_end
-lassign $g3_range g3_start g3_end
 
 puts ">>> Processing file: $filename"
 puts ">>> Glycan ranges: G1={$g1_start $g1_end}  G2={$g2_start $g2_end}  G3={$g3_start $g3_end}"
