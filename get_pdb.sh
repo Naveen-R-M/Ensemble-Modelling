@@ -24,12 +24,13 @@ EXTRACT_GLYCANS_AND_CHAINS_SCRIPT='extract_glycans_and_chains.tcl'
 [[ -f "$COMPUTE_GLYCAN_PARAMS_SCRIPT" ]] || { echo "Missing $COMPUTE_GLYCAN_PARAMS_SCRIPT"; exit 1; }
 [[ -f "$EXTRACT_GLYCANS_AND_CHAINS_SCRIPT" ]] || { echo "Missing $EXTRACT_GLYCANS_AND_CHAINS_SCRIPT"; exit 1; }
 
-# Read NRUNS from input.dat (portable, digits-only)
-NRUNS=$(awk -F= '/^NRUNS=/{match($2,/[0-9]+/,m); print m[0]; exit}' "$folder/input.dat")
-[[ -n "${NRUNS:-}" ]] || { echo "NRUNS not found in $folder/input.dat"; exit 1; }
 
 for m in "$folder"/*; do
   [[ -d "$m" ]] || continue
+
+  # Read NRUNS from input.dat (portable, digits-only)
+  NRUNS=$(awk -F= '/^NRUNS=/{match($2,/[0-9]+/,m); print m[0]; exit}' "$m/input.dat")
+  [[ -n "${NRUNS:-}" ]] || { echo "NRUNS not found in $m/input.dat"; exit 1; }
 
   # Compute glycan parameters once per subfolder
   read -r g1_start g1_end g2_start g2_end g3_start g3_end chain_len first_chain_len_plus_one \
@@ -40,7 +41,7 @@ for m in "$folder"/*; do
   : > "$out_file"
 
   for i in $(seq 0 $((NRUNS - 1))); do
-    filename="${folder}/pred_dECALCrAS1000/siv.pdb_${i}/pm.pdb.B99990001.pdb"
+    filename="${m}/pred_dECALCrAS1000/siv.pdb_${i}/pm.pdb.B99990001.pdb"
     echo "Processing $filename"
 
     # Run VMD with computed glycan parameters
