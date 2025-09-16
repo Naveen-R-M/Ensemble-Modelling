@@ -36,6 +36,22 @@ for m in "$folder"/*; do
   read -r g1_start g1_end g2_start g2_end g3_start g3_end chain_len first_chain_len_plus_one \
     < <(python3 "$COMPUTE_GLYCAN_PARAMS_SCRIPT" "$m/align.ali" "$m/glyc.dat")
 
+  # sanity: all 6 glycan bounds must be integers
+  for v in "$g1_start" "$g1_end" "$g2_start" "$g2_end" "$g3_start" "$g3_end"; do
+    [[ "$v" =~ ^-?[0-9]+$ ]] || { echo "Bad glycan param: '$v'"; exit 1; }
+  done
+
+  # make Tcl lists
+  range1="{${g1_start} ${g1_end}}"
+  range2="{${g2_start} ${g2_end}}"
+  range3="{${g3_start} ${g3_end}}"
+
+  echo "Args to VMD:"
+  echo "  file   : $filename"
+  echo "  G1 list: $range1"
+  echo "  G2 list: $range2"
+  echo "  G3 list: $range3"
+
   # One output file per subfolder (kept inside the subfolder)
   out_file="$m/output_$(basename "$m").pdb"
   : > "$out_file"
@@ -45,8 +61,9 @@ for m in "$folder"/*; do
     echo "Processing $filename"
 
     # Run VMD with computed glycan parameters
-    vmd -dispdev text -e "$EXTRACT_GLYCANS_AND_CHAINS_SCRIPT" -args "$filename" \
-      "{$g1_start $g1_end}" "{$g2_start $g2_end}" "{$g3_start $g3_end}"
+    vmd -dispdev text -eofexit -log vmd_run.log \
+    -e "$EXTRACT_GLYCANS_AND_CHAINS_SCRIPT" -args \
+    "$filename" "$range1" "$range2" "$range3"
 
     # Extract first residue number of chain A from the source PDB
     starting_chain_number=$(
