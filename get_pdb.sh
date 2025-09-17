@@ -120,7 +120,11 @@ for m in "$folder"/*; do
 
     # Single pipeline: filter -> reatom -> append END, then append to the run's output
     {
-      awk '!/^(CRYST1|REMARK|END)$/' -- "${files[@]}" \
+      awk '{
+            sub(/\r$/, "");
+            if ($0 ~ /^(CRYST1|REMARK|TER|END|ENDMDL)([[:space:]].*)?$/) next;
+            print
+          }' "${files[@]}" \
       | pdb_reatom -1
       echo 'END'
     } >> "$out_file"
@@ -130,7 +134,13 @@ for m in "$folder"/*; do
   done
 
   echo "Aligning trajectory for $(basename "$m")..."
-  vmd -dispdev text -e "$ALIGN_TRAJECTORY_SCRIPT" -args "$out_file" "$m/output_aligned.pdb" "protein and backbone"
+  if [[ ! -s "$out_file" ]]; then
+    echo "Warning: $out_file is empty or missing — skipping alignment for $(basename "$m")."
+  else
+    vmd -dispdev text -eofexit \
+        -e "$ALIGN_TRAJECTORY_SCRIPT" -args \
+        "$out_file" "$m/output_aligned.pdb" "protein and backbone"
+  fi
 done
 
 # Final cleanup (defensive)

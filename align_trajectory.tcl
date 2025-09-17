@@ -1,18 +1,17 @@
-# Usage from shell:
-#   vmd -dispdev text -e align_traj.tcl -args INPUT_PDB OUTPUT_PDB [SEL]
-# Example:
-#   vmd -dispdev text -e align_traj.tcl -args out.pdb aligned.pdb "protein and backbone"
+# align_trajectory.tcl
+# Usage: vmd -dispdev text -e align_trajectory.tcl -args INPUT_PDB OUTPUT_PDB [SEL]
 
-# --- parse args ---
+proc die {msg} { puts stderr $msg ; exit 1 }
+
+if {[llength $argv] < 2} {
+    die "Usage: vmd -dispdev text -e align_trajectory.tcl -args INPUT_PDB OUTPUT_PDB [SEL]"
+}
+
 set inFile  [lindex $argv 0]
 set outFile [lindex $argv 1]
-set seltext [lindex $argv 2]
-if {$seltext eq ""} { set seltext "protein and backbone" }
+set seltext [expr {[llength $argv] >= 3 ? [lindex $argv 2] : "protein and backbone"}]
 
-# --- load the multi-model PDB as a trajectory ---
 mol new $inFile type pdb first 0 last -1 waitfor all
-
-# --- align all frames to frame 0 using the selection ---
 set ref_frame 0
 set ref_sel   [atomselect top "$seltext" frame $ref_frame]
 set check_sel [atomselect top "$seltext"]
@@ -26,6 +25,5 @@ for {set i 0} {$i < $num_frames} {incr i} {
     $mov_sel move $trans_mat
 }
 
-# --- write aligned trajectory ---
 animate write pdb $outFile
 exit
