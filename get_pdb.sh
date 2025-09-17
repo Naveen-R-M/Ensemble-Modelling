@@ -135,11 +135,14 @@ for m in "$folder"/*; do
 
   echo "Aligning trajectory for $(basename "$m")..."
   if [[ ! -s "$out_file" ]]; then
-    echo "Warning: $out_file is empty or missing — skipping alignment for $(basename "$m")."
+    echo "Warning: $out_file is empty — skipping alignment."
   else
+    SEL="protein and backbone"   # customize here if needed
+    printf 'Align args:\n  in : %q\n  out: %q\n  sel: %q\n' "$out_file" "$m/output_aligned.pdb" "$SEL"
+
     vmd -dispdev text -eofexit \
         -e "$ALIGN_TRAJECTORY_SCRIPT" -args \
-        "$out_file" "$m/output_aligned.pdb" "protein and backbone"
+        "$out_file" "$m/output_aligned.pdb" "$SEL"
   fi
 done
 

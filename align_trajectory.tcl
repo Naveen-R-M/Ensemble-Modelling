@@ -1,8 +1,6 @@
-# align_trajectory.tcl
-# Usage: vmd -dispdev text -e align_trajectory.tcl -args INPUT_PDB OUTPUT_PDB [SEL]
-
 proc die {msg} { puts stderr $msg ; exit 1 }
 
+# need at least INPUT and OUTPUT
 if {[llength $argv] < 2} {
     die "Usage: vmd -dispdev text -e align_trajectory.tcl -args INPUT_PDB OUTPUT_PDB [SEL]"
 }
@@ -12,6 +10,7 @@ set outFile [lindex $argv 1]
 set seltext [expr {[llength $argv] >= 3 ? [lindex $argv 2] : "protein and backbone"}]
 
 mol new $inFile type pdb first 0 last -1 waitfor all
+
 set ref_frame 0
 set ref_sel   [atomselect top "$seltext" frame $ref_frame]
 set check_sel [atomselect top "$seltext"]
