@@ -121,8 +121,9 @@ for m in "$folder"/*; do
   : > "$out_file"
 
   # --- per run ---
-  for i in $(seq 0 $((NRUNS - 1))); do
-    filename="${m}/pred_dECALCrAS1000/siv.pdb_${i}/pm.pdb.B99990001.pdb"
+  for i in "${m%/}"/pred_dECALCrAS1000/*.pdb_*/; do   # ensure dirs
+    run_id="$(basename "${i%/}")"                     # e.g., start.pdb_0
+    filename="${i}pm.pdb.B99990001.pdb" 
     [[ -f "$filename" ]] || { echo "Missing $filename (run $i) — skipping"; continue; }
 
     (
@@ -132,7 +133,7 @@ for m in "$folder"/*; do
       vmd -dispdev text -eofexit \
           -e "$EXTRACT_GLYCANS_AND_CHAINS_SCRIPT" -args \
           "$filename" "$g1_start" "$g1_end" "$g2_start" "$g2_end" "$g3_start" "$g3_end" \
-          > "${model_vmd_log_dir}/vmd_run_${i}.log" 2>&1
+          > "${model_vmd_log_dir}/vmd_run_${run_id}.log" 2>&1
 
       # Determine starting residue index for chain A
       starting_chain_number=$(
