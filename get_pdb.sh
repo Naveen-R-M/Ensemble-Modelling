@@ -122,8 +122,8 @@ for m in "$folder"/*; do
 
   # --- per run ---
   for i in "${m%/}"/pred_dECALCrAS1000/*.pdb_*/; do   # ensure dirs
-    run_id="$(basename "${i%/}")"                     # e.g., start.pdb_0
-    filename="${i}pm.pdb.B99990001.pdb" 
+    run_id="$(basename "${i%/}")"                       # e.g., start.pdb_0
+    filename="${i}pm.pdb.B99990001.pdb"
     [[ -f "$filename" ]] || { echo "Missing $filename (run $i) — skipping"; continue; }
 
     (
@@ -171,28 +171,25 @@ for m in "$folder"/*; do
       done
       [[ ${#files[@]} -gt 0 ]] || { rm -f C*.pdb || true; exit 0; }
 
-      # Concatenate, strip meta lines, re-atom index; NO per-run END
-      awk '{
-             sub(/\r$/, "")
-             if ($0 ~ /^(CRYST1|REMARK|TER|END|ENDMDL)([[:space:]].*)?$/) next
-             print
-           }' "${files[@]}" \
-        | pdb_reatom -1 >> "$out_file"
+      # Concatenate, strip meta lines, re-atom index; add END after each file content
+      for file in "${files[@]}"; do
+        awk '{
+              sub(/\r$/, "")
+              if ($0 ~ /^(CRYST1|REMARK|TER|END|ENDMDL)([[:space:]].*)?$/) next
+              print
+            }' "$file" | pdb_reatom -1
+        echo "END"
+      done >> "$out_file"
 
       rm -f C*.pdb || true
     )
   done
 
-  # Single END at the end of the model file
-  if [[ -s "$out_file" ]]; then
-    printf 'END\n' >> "$out_file"
-  fi
-
   # Align (selection defaults to CA)
   if [[ -s "$out_file" ]]; then
       export VMDNOSTARTUP=1
       export IN_PDB="$out_file"
-      export OUT_PDB="${out_dir}/output_aligned.pdb"
+      export OUT_PDB="${out_dir}/output_${model_name}_aligned.pdb"
       export ALIGN_SEL_ENV="${ALIGN_SEL:-name CA}"
 
       vmd -dispdev text -eofexit \

@@ -1,6 +1,10 @@
 # Usage:
 # vmd -dispdev text -e extract_glycans_and_chains.tcl -args input.pdb g1s g1e g2s g2e g3s g3e
-proc die {msg} { puts stderr $msg ; exit 1 }
+
+proc die {msg} {
+    puts stderr $msg
+    exit 1
+}
 
 if {[llength $argv] < 7} {
     die "Usage: vmd -dispdev text -e extract_glycans_and_chains.tcl -args input.pdb g1s g1e g2s g2e g3s g3e"
@@ -26,21 +30,50 @@ puts ">>> Glycan ranges: G1={$g1_start $g1_end}  G2={$g2_start $g2_end}  G3={$g3
 
 mol new $filename type pdb waitfor all
 
+# Glycan selections
 set sel_g1 [atomselect top "not protein and (resid $g1_start to $g1_end)"]
 set sel_g2 [atomselect top "not protein and (resid $g2_start to $g2_end)"]
 set sel_g3 [atomselect top "not protein and (resid $g3_start to $g3_end)"]
 
+# Set segname and write glycans
+$sel_g1 set segname CAR1
 $sel_g1 writepdb CAR1.pdb
+
+$sel_g2 set segname CAR2
 $sel_g2 writepdb CAR2.pdb
+
+$sel_g3 set segname CAR3
 $sel_g3 writepdb CAR3.pdb
 
-set sel_chA [atomselect top "protein and chain A"]; $sel_chA writepdb CHA.pdb
-set sel_chB [atomselect top "protein and chain B"]; $sel_chB writepdb CHB.pdb
-set sel_chC [atomselect top "protein and chain C"]; $sel_chC writepdb CHC.pdb
-set sel_chD [atomselect top "protein and chain D"]; $sel_chD writepdb CHD.pdb
-set sel_chE [atomselect top "protein and chain E"]; $sel_chE writepdb CHE.pdb
-set sel_chF [atomselect top "protein and chain F"]; $sel_chF writepdb CHF.pdb
+# Protein chain selections
+set sel_chA [atomselect top "protein and chain A"]
+$sel_chA set segname CHA
+$sel_chA writepdb CHA.pdb
 
-foreach s {sel_g1 sel_g2 sel_g3 sel_chA sel_chB sel_chC sel_chD sel_chE sel_chF} { [set $s] delete }
+set sel_chB [atomselect top "protein and chain B"]
+$sel_chB set segname CHB
+$sel_chB writepdb CHB.pdb
+
+set sel_chC [atomselect top "protein and chain C"]
+$sel_chC set segname CHC
+$sel_chC writepdb CHC.pdb
+
+set sel_chD [atomselect top "protein and chain D"]
+$sel_chD set segname CHD
+$sel_chD writepdb CHD.pdb
+
+set sel_chE [atomselect top "protein and chain E"]
+$sel_chE set segname CHE
+$sel_chE writepdb CHE.pdb
+
+set sel_chF [atomselect top "protein and chain F"]
+$sel_chF set segname CHF
+$sel_chF writepdb CHF.pdb
+
+# Clean up selections
+foreach s {sel_g1 sel_g2 sel_g3 sel_chA sel_chB sel_chC sel_chD sel_chE sel_chF} {
+    [set $s] delete
+}
+
 mol delete top
 exit
