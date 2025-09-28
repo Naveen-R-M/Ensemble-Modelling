@@ -8,12 +8,16 @@
 #SBATCH --partition=short
 
 set -euo pipefail
+shopt -s nullglob
 
 # --- modules & environment ---
 module purge || true
 module use /projects/SimBioSys/share/software/modulefiles
 module load VMD/1.9.4a55
 module load miniconda3/24.11.1 || true
+
+# Avoid reading site/user startup files in VMD for all invocations
+export VMDNOSTARTUP=1
 
 ALLOSMOD_CONDA_ENV="${ALLOSMOD_CONDA_ENV:-/projects/SimBioSys/share/software/allosmod-env}"
 echo "[get_pdb] Using ALLOSMOD_CONDA_ENV=$ALLOSMOD_CONDA_ENV"
@@ -39,7 +43,7 @@ fi
 folder="$1"
 USER_ID="$2"
 
-# --- .env loader (honors LOG_DIR/LOG_ROOT/OUTPUT_DIR/ALIGN_SEL) ---
+# --- .env loader (honors LOG_DIR/LOG_ROOT/OUTPUT_DIR) ---
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 try_source_env() {
   local envfile="$1"
@@ -84,15 +88,9 @@ ALIGN_TRAJECTORY_SCRIPT="${SCRIPTS_BASE}/align_trajectory.tcl"
 COMPUTE_GLYCAN_PARAMS_SCRIPT="${SCRIPTS_BASE}/compute_glycan_params.py"
 EXTRACT_GLYCANS_AND_CHAINS_SCRIPT="${SCRIPTS_BASE}/extract_glycans_and_chains.tcl"
 
-[[ -f "$ALIGN_TRAJECTORY_SCRIPT" ]] || { echo "Missing $ALIGN_TRAJECTORY_SCRIPT"; exit 1; }
-[[ -f "$COMPUTE_GLYCAN_PARAMS_SCRIPT" ]] || { echo "Missing $COMPUTE_GLYCAN_PARAMS_SCRIPT"; exit 1; }
+[[ -f "$ALIGN_TRAJECTORY_SCRIPT" ]]           || { echo "Missing $ALIGN_TRAJECTORY_SCRIPT"; exit 1; }
+[[ -f "$COMPUTE_GLYCAN_PARAMS_SCRIPT" ]]      || { echo "Missing $COMPUTE_GLYCAN_PARAMS_SCRIPT"; exit 1; }
 [[ -f "$EXTRACT_GLYCANS_AND_CHAINS_SCRIPT" ]] || { echo "Missing $EXTRACT_GLYCANS_AND_CHAINS_SCRIPT"; exit 1; }
-
-# Default alignment selection (override via .env ALIGN_SEL)
-ALIGN_SEL="${ALIGN_SEL:-name CA}"
-
-# Avoid reading site/user startup files in VMD
-export VMDNOSTARTUP=1
 
 # --- per-subfolder processing ---
 for m in "$folder"/*; do
@@ -113,90 +111,160 @@ for m in "$folder"/*; do
   read -r g1_start g1_end g2_start g2_end g3_start g3_end chain_len first_chain_len_plus_one \
     < <(python3 "$COMPUTE_GLYCAN_PARAMS_SCRIPT" "$m/align.ali" "$m/glyc.dat")
 
-  for v in "$g1_start" "$g1_end" "$g2_start" "$g2_end" "$g3_start" "$g3_end"; do
+  for v in "$g1_start" "$g1_end" "$g2_start" "$g2_end" "$g3_start" "$g3_end" "$chain_len" "$first_chain_len_plus_one"; do
     [[ "$v" =~ ^-?[0-9]+$ ]] || { echo "Bad glycan param '$v' for $model_name"; exit 1; }
   done
 
-  out_file="${out_dir}/output_${model_name}.pdb"
+  out_file="${out_dir}/output.pdb"
   : > "$out_file"
 
-  # --- per run ---
-  for i in "${m%/}"/pred_dECALCrAS1000/*.pdb_*/; do   # ensure dirs
-    run_id="$(basename "${i%/}")"                       # e.g., start.pdb_0
+  frame_idx=0
+  atoms_expected=""
+
+  # --- detect the PDB prefix pattern (e.g., start.pdb_, bg505.pdb_, etc.) ---
+  pdb_prefix=""
+  for candidate_dir in "${m%/}"/pred_dECALCrAS1000/*.pdb_0/; do
+    if [[ -d "$candidate_dir" ]]; then
+      candidate_name=$(basename "$candidate_dir")
+      pdb_prefix="${candidate_name%_0}"  # Remove _0 suffix to get prefix like "start.pdb" or "bg505.pdb"
+      echo "[info] Detected PDB prefix pattern: ${pdb_prefix}_*"
+      break
+    fi
+  done
+  
+  if [[ -z "$pdb_prefix" ]]; then
+    echo "[error] Could not find *.pdb_0 directory in ${m%/}/pred_dECALCrAS1000/"
+    continue
+  fi
+
+  # --- per run (NRUNS-based iteration with dynamic prefix) ---
+  for ((run_num = 0; run_num < NRUNS; run_num++)); do
+    i="${m%/}/pred_dECALCrAS1000/${pdb_prefix}_${run_num}/"
+    [[ -d "$i" ]] || { echo "Missing directory $i — skipping"; continue; }
+    
+    run_id="$(basename "${i%/}")"               # e.g., start.pdb_0 or bg505.pdb_0
     filename="${i}pm.pdb.B99990001.pdb"
     [[ -f "$filename" ]] || { echo "Missing $filename (run $i) — skipping"; continue; }
 
-    (
-      cd "$out_dir" || exit 1
+    ((++frame_idx))
+    temp_file="${out_dir}/output_temp.pdb"
+    : > "$temp_file"
 
-      # Extract chains & glycans with VMD (logs to model_vmd_log_dir)
-      vmd -dispdev text -eofexit \
+    # Work inside out_dir (so VMD drops CHA/CHB/... here), but keep current shell scope
+    pushd "$out_dir" >/dev/null
+
+    # Extract chains & glycans with VMD (logs to model_vmd_log_dir)
+    if ! vmd -dispdev text -eofexit \
           -e "$EXTRACT_GLYCANS_AND_CHAINS_SCRIPT" -args \
           "$filename" "$g1_start" "$g1_end" "$g2_start" "$g2_end" "$g3_start" "$g3_end" \
-          > "${model_vmd_log_dir}/vmd_run_${run_id}.log" 2>&1
+          > "${model_vmd_log_dir}/vmd_run_${run_id}.log" 2>&1; then
+      echo "VMD extract failed for run $run_id (see log)." >&2
+      rm -f C*.pdb || true
+      popd >/dev/null
+      continue
+    fi
 
-      # Determine starting residue index for chain A
-      starting_chain_number=$(
-        pdb_tidy "$filename" \
-          | pdb_selchain -A \
-          | awk '/^(ATOM|HETATM)/{print substr($0,23,4)+0; exit}'
-      )
-      [[ -n "${starting_chain_number:-}" ]] || { rm -f C*.pdb || true; exit 0; }
+    # Determine starting residue index for chain A
+    starting_chain_number=$(
+      pdb_tidy "$filename" \
+        | pdb_selchain -A \
+        | awk '/^(ATOM|HETATM)/{print substr($0,23,4)+0; exit}'
+    )
+    if [[ -z "${starting_chain_number:-}" ]]; then
+      rm -f C*.pdb || true
+      popd >/dev/null
+      continue
+    fi
 
-      # Renumber pieces
-      if [[ "$chain_len" -eq 3 ]]; then
-        pdb_reres -"$starting_chain_number" CHA.pdb > CHA_renum.pdb
-        pdb_reres -"$starting_chain_number" CHB.pdb > CHB_renum.pdb
-        pdb_reres -"$starting_chain_number" CHC.pdb > CHC_renum.pdb
-        pdb_reres -1 CAR1.pdb > CAR1_renum.pdb
-        pdb_reres -1 CAR2.pdb > CAR2_renum.pdb
-        pdb_reres -1 CAR3.pdb > CAR3_renum.pdb
-        concat_files=(CHA_renum.pdb CHB_renum.pdb CHC_renum.pdb CAR1_renum.pdb CAR2_renum.pdb CAR3_renum.pdb)
-      else
-        pdb_reres -"$starting_chain_number"      CHA.pdb > CHA_renum.pdb
-        pdb_reres -"$first_chain_len_plus_one"   CHB.pdb > CHB_renum.pdb
-        pdb_reres -"$starting_chain_number"      CHC.pdb > CHC_renum.pdb
-        pdb_reres -"$first_chain_len_plus_one"   CHD.pdb > CHD_renum.pdb
-        pdb_reres -"$starting_chain_number"      CHE.pdb > CHE_renum.pdb
-        pdb_reres -"$first_chain_len_plus_one"   CHF.pdb > CHF_renum.pdb
-        pdb_reres -1 CAR1.pdb > CAR1_renum.pdb
-        pdb_reres -1 CAR2.pdb > CAR2_renum.pdb
-        pdb_reres -1 CAR3.pdb > CAR3_renum.pdb
-        concat_files=(CHA_renum.pdb CHB_renum.pdb CHC_renum.pdb CHD_renum.pdb CHE_renum.pdb CHF_renum.pdb CAR1_renum.pdb CAR2_renum.pdb CAR3_renum.pdb)
-      fi
+    # Renumber pieces
+    if [[ "$chain_len" -eq 3 ]]; then
+      pdb_reres -"$starting_chain_number" CHA.pdb > CHA_renum.pdb
+      pdb_reres -"$starting_chain_number" CHB.pdb > CHB_renum.pdb
+      pdb_reres -"$starting_chain_number" CHC.pdb > CHC_renum.pdb
+      pdb_reres -1 CAR1.pdb > CAR1_renum.pdb
+      pdb_reres -1 CAR2.pdb > CAR2_renum.pdb
+      pdb_reres -1 CAR3.pdb > CAR3_renum.pdb
+      concat_files=(CHA_renum.pdb CHB_renum.pdb CHC_renum.pdb CAR1_renum.pdb CAR2_renum.pdb CAR3_renum.pdb)
+    else
+      pdb_reres -"$starting_chain_number"      CHA.pdb > CHA_renum.pdb
+      pdb_reres -"$first_chain_len_plus_one"   CHB.pdb > CHB_renum.pdb
+      pdb_reres -"$starting_chain_number"      CHC.pdb > CHC_renum.pdb
+      pdb_reres -"$first_chain_len_plus_one"   CHD.pdb > CHD_renum.pdb
+      pdb_reres -"$starting_chain_number"      CHE.pdb > CHE_renum.pdb
+      pdb_reres -"$first_chain_len_plus_one"   CHF.pdb > CHF_renum.pdb
+      pdb_reres -1 CAR1.pdb > CAR1_renum.pdb
+      pdb_reres -1 CAR2.pdb > CAR2_renum.pdb
+      pdb_reres -1 CAR3.pdb > CAR3_renum.pdb
+      concat_files=(CHA_renum.pdb CHB_renum.pdb CHC_renum.pdb CHD_renum.pdb CHE_renum.pdb CHF_renum.pdb CAR1_renum.pdb CAR2_renum.pdb CAR3_renum.pdb)
+    fi
 
-      files=()
-      for f in "${concat_files[@]}"; do
-        [[ -s "$f" ]] && files+=("$f")
-      done
-      [[ ${#files[@]} -gt 0 ]] || { rm -f C*.pdb || true; exit 0; }
+    # STRICT: require every expected component; if any missing/empty -> skip frame
+    ok=1
+    for f in "${concat_files[@]}"; do
+      [[ -s "$f" ]] || { ok=0; break; }
+    done
+    if (( ! ok )); then
+      echo "[warn] skipping frame $frame_idx: missing component(s)"
+      rm -f C*.pdb *_renum.pdb || true
+      popd >/dev/null
+      continue
+    fi
 
-      # Concatenate, strip meta lines, re-atom index; add END after each file content
-      for file in "${files[@]}"; do
+    # Concatenate in fixed order, strip meta lines, to temp_file (absolute path)
+    {
+      for file in "${concat_files[@]}"; do
         awk '{
               sub(/\r$/, "")
-              if ($0 ~ /^(CRYST1|REMARK|TER|END|ENDMDL)([[:space:]].*)?$/) next
+              if ($0 ~ /^(CRYST1|REMARK|TER|END|ENDMDL|MODEL)([[:space:]].*)?$/) next
               print
-            }' "$file" | pdb_reatom -1
-        echo "END"
-      done >> "$out_file"
+            }' "$file"
+      done
+    } > "$temp_file"
 
-      rm -f C*.pdb || true
-    )
+    # Reindex into a normalized payload file and count atoms
+    frame_payload="${out_dir}/frame_${frame_idx}.pdb"
+    pdb_reatom -1 < "$temp_file" > "$frame_payload"
+
+    atoms_this=$(awk '/^(ATOM|HETATM)/{n++} END{print n+0}' "$frame_payload")
+    if [[ -z "${atoms_expected:-}" ]]; then
+      atoms_expected="$atoms_this"
+      echo "[info] first frame atoms=$atoms_expected"
+    fi
+
+    if [[ "$atoms_this" -ne "$atoms_expected" ]]; then
+      echo "[warn] skipping frame $frame_idx: atoms $atoms_this != expected $atoms_expected"
+      rm -f "$frame_payload" C*.pdb *_renum.pdb || true
+      popd >/dev/null
+      continue
+    fi
+
+    # Append as a MODEL that VMD will accept (MODEL/ENDMDL wrap the reatomed payload)
+    {
+      printf 'MODEL     %d\n' "$frame_idx"
+      cat "$frame_payload"
+      echo "ENDMDL"
+    } >> "$out_file"
+
+    # cleanup of intermediates for this run
+    rm -f "$frame_payload" "$temp_file" C*.pdb *_renum.pdb || true
+    popd >/dev/null
   done
 
-  # Align (selection defaults to CA)
+  # Align the multi-model PDB
   if [[ -s "$out_file" ]]; then
-      export VMDNOSTARTUP=1
-      export IN_PDB="$out_file"
-      export OUT_PDB="${out_dir}/output_${model_name}_aligned.pdb"
-      export ALIGN_SEL_ENV="${ALIGN_SEL:-name CA}"
+    IN_PDB="$out_file"
+    OUT_PDB="${out_dir}/output_aligned.pdb"
+    ALIGN_LOG="${model_vmd_log_dir}/align_trajectory_vmd.log"
 
-      vmd -dispdev text -eofexit \
+    if ! vmd -dispdev text -eofexit \
           -e "$ALIGN_TRAJECTORY_SCRIPT" \
-          > "${model_vmd_log_dir}/align_trajectory_vmd.log" 2>&1
+          -args "$IN_PDB" "$OUT_PDB" \
+          > "$ALIGN_LOG" 2>&1; then
+      echo "VMD alignment failed for $model_name (see log: $ALIGN_LOG)" >&2
+      exit 1
+    fi
   fi
 done
 
 # best-effort cleanup if anything leaked in the submit dir
-rm -f C*.pdb || true
+rm -f C*.pdb *_renum.pdb || true

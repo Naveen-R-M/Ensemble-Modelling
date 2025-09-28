@@ -45,28 +45,31 @@ $sel_g2 writepdb CAR2.pdb
 $sel_g3 set segname CAR3
 $sel_g3 writepdb CAR3.pdb
 
+# Define standard amino acids once
+set std_amino_acids "resname ALA CYS ASP GLU PHE GLY HIS ILE LYS LEU MET ASN PRO GLN ARG SER THR VAL TRP TYR SEC PYL"
+
 # Protein chain selections
-set sel_chA [atomselect top "protein and chain A"]
+set sel_chA [atomselect top "chain A and ($std_amino_acids)"]
 $sel_chA set segname CHA
 $sel_chA writepdb CHA.pdb
 
-set sel_chB [atomselect top "protein and chain B"]
+set sel_chB [atomselect top "chain B and ($std_amino_acids)"]
 $sel_chB set segname CHB
 $sel_chB writepdb CHB.pdb
 
-set sel_chC [atomselect top "protein and chain C"]
+set sel_chC [atomselect top "chain C and ($std_amino_acids)"]
 $sel_chC set segname CHC
 $sel_chC writepdb CHC.pdb
 
-set sel_chD [atomselect top "protein and chain D"]
+set sel_chD [atomselect top "chain D and ($std_amino_acids)"]
 $sel_chD set segname CHD
 $sel_chD writepdb CHD.pdb
 
-set sel_chE [atomselect top "protein and chain E"]
+set sel_chE [atomselect top "chain E and ($std_amino_acids)"]
 $sel_chE set segname CHE
 $sel_chE writepdb CHE.pdb
 
-set sel_chF [atomselect top "protein and chain F"]
+set sel_chF [atomselect top "chain F and ($std_amino_acids)"]
 $sel_chF set segname CHF
 $sel_chF writepdb CHF.pdb
 

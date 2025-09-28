@@ -1,43 +1,57 @@
-# align_trajectory.tcl — minimal, quiet, uses "protein and backbone" with autobonds ON
-# Inputs come from environment variables (robust, no -args needed):
-#   IN_PDB        : input PDB path  (required)
-#   OUT_PDB       : output PDB path (required)
-#   ALIGN_SEL_ENV : optional atom selection (defaults to "protein and backbone")
+# align_trajectory.tcl
+# Usage:
+#   vmd -dispdev text -e align_trajectory.tcl -args IN.pdb OUT.pdb
 
-proc die {msg} { puts stderr "FATAL: $msg" ; flush stderr ; exit 1 }
-
-# ---- read inputs (env only) ----
-if {![info exists ::env(IN_PDB)] || ![info exists ::env(OUT_PDB)]} {
-    die "Missing IN_PDB or OUT_PDB environment variables."
+# ---- args ----
+set in_pdb  [lindex $argv 0]
+set out_pdb [lindex $argv 1]
+if {[llength $argv] < 2} {
+    puts stderr "Usage: vmd -dispdev text -e align_trajectory.tcl -args IN.pdb OUT.pdb"
+    exit 1
 }
-set inFile  $::env(IN_PDB)
-set outFile $::env(OUT_PDB)
+
+# ---- load multi-model PDB ----
+mol new $in_pdb type pdb first 0 last -1 waitfor all
+set nframes [molinfo top get numframes]
+puts "numframes=$nframes"
+
+# ---- selections ----
+set ref_frame 0
 set seltext "protein and backbone"
-if {[info exists ::env(ALIGN_SEL_ENV)] && $::env(ALIGN_SEL_ENV) ne ""} {
-    set seltext $::env(ALIGN_SEL_ENV)
-}
-
-if {![file exists $inFile]} { die "Input PDB does not exist: $inFile" }
-
-# ---- load and align ----
-# Autobonds is ON by default; we rely on it so 'protein and backbone' works.
-mol new $inFile type pdb first 0 last -1 waitfor all
-
-set ref_sel   [atomselect top $seltext frame 0]
+set ref_sel   [atomselect top $seltext frame $ref_frame]
 set check_sel [atomselect top $seltext]
 set mov_sel   [atomselect top all]
 
-if {[$ref_sel num] == 0} { die "Selection '$seltext' matched 0 atoms." }
-
-set nf [molinfo top get numframes]
-if {$nf <= 0} { die "No frames found in input: $inFile" }
-
-for {set i 0} {$i < $nf} {incr i} {
+# ---- align all frames to reference ----
+for {set i 0} {$i < $nframes} {incr i} {
     $check_sel frame $i
-    set trans_mat [measure fit $check_sel $ref_sel]
+    set M [measure fit $check_sel $ref_sel]
     $mov_sel frame $i
-    $mov_sel move $trans_mat
+    $mov_sel move $M
 }
 
-animate write pdb $outFile
+# ---- write ALL frames with MODEL/ENDMDL ----
+set fh [open $out_pdb "w"]
+for {set i 0} {$i < $nframes} {incr i} {
+    puts $fh [format "MODEL     %d" [expr {$i+1}]]
+
+    # write current frame to a temp file
+    set tmpfile [format "%s.frame%05d.pdb" $out_pdb $i]
+    $mov_sel frame $i
+    $mov_sel writepdb $tmpfile
+
+    # append only atom records (strip any MODEL/END/TER/REMARK lines)
+    set pf [open $tmpfile "r"]
+    while {[gets $pf line] >= 0} {
+        if {[regexp {^(CRYST1|REMARK|TER|END|ENDMDL|MODEL)} $line]} {
+            continue
+        }
+        puts $fh $line
+    }
+    close $pf
+    file delete -force $tmpfile
+
+    puts $fh "ENDMDL"
+}
+close $fh
 exit
