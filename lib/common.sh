@@ -6,20 +6,22 @@ declare -g SCRIPT_DIR
 declare -g ALLOSMOD_CONDA_ENV  
 declare -g BASE_LOG_ROOT USER_LOG_ROOT ENSEMBLE_LOG_DIR VMD_LOG_DIR OUT_BASE SCRIPTS_BASE
 
-# --- Logging functions ---
+# Input: message string | Output: formatted info message to stderr
 log_info() {
     echo "[info] $*" >&2
 }
 
+# Input: message string | Output: formatted warning message to stderr
 log_warn() {
     echo "[warn] $*" >&2
 }
 
+# Input: message string | Output: formatted error message to stderr
 log_error() {
     echo "[error] $*" >&2
 }
 
-# --- Environment setup ---
+# Input: none | Output: sets up VMD and conda modules, exports ALLOSMOD_CONDA_ENV
 setup_modules() {
     log_info "Setting up modules and environment"
     
@@ -28,13 +30,11 @@ setup_modules() {
     module load VMD/1.9.4a55
     module load miniconda3/24.11.1 || true
 
-    # Avoid reading site/user startup files in VMD for all invocations
     export VMDNOSTARTUP=1
 
     ALLOSMOD_CONDA_ENV="${ALLOSMOD_CONDA_ENV:-/projects/SimBioSys/share/software/allosmod-env}"
     log_info "Using ALLOSMOD_CONDA_ENV=$ALLOSMOD_CONDA_ENV"
 
-    # Initialize conda in non-interactive shells, then activate the env
     if command -v conda >/dev/null 2>&1; then
         if [[ "$(type -t conda)" != "function" ]]; then
             CONDA_BASE="$(conda info --base 2>/dev/null || true)"
@@ -48,7 +48,7 @@ setup_modules() {
     fi
 }
 
-# --- Environment file loader ---
+# Input: env_file_path | Output: return 0 if sourced successfully, 1 if not found
 try_source_env() {
     local envfile="$1"
     [[ -f "$envfile" ]] || return 1
@@ -59,6 +59,7 @@ try_source_env() {
     return 0
 }
 
+# Input: folder_path | Output: sources .env file from candidate locations
 load_env_files() {
     local folder="$1"
     
@@ -67,7 +68,7 @@ load_env_files() {
     done
 }
 
-# --- Directory setup ---
+# Input: user_id | Output: creates and sets directory variables (BASE_LOG_ROOT, USER_LOG_ROOT, ENSEMBLE_LOG_DIR, VMD_LOG_DIR, OUT_BASE, SCRIPTS_BASE)
 setup_directories() {
     local user_id="$1"
     
@@ -84,7 +85,7 @@ setup_directories() {
     SCRIPTS_BASE="${ENSEMBLE_SCRIPTS_DIR:-$SCRIPT_DIR}"
 }
 
-# --- Logging redirection ---
+# Input: none | Output: redirects stdout/stderr to log files based on SLURM_JOB_ID
 setup_logging() {
     if [[ -n "${SLURM_JOB_ID:-}" ]]; then
         exec > >(tee -a "${ENSEMBLE_LOG_DIR}/get_pdb_${SLURM_JOB_ID}.out") 2> >(tee -a "${ENSEMBLE_LOG_DIR}/get_pdb_${SLURM_JOB_ID}.err" >&2)
@@ -93,7 +94,7 @@ setup_logging() {
     fi
 }
 
-# --- Tool validation ---
+# Input: none | Output: validates required tools exist, exits with error if any missing
 check_required_tools() {
     local missing_tools=()
     
@@ -109,7 +110,7 @@ check_required_tools() {
     fi
 }
 
-# --- Script validation ---
+# Input: none | Output: validates VMD scripts exist, exports ALIGN_TRAJECTORY_SCRIPT and EXTRACT_GLYCANS_AND_CHAINS_SCRIPT
 validate_scripts() {
     local align_trajectory_script="${SCRIPTS_BASE}/align_trajectory.tcl"
     local extract_glycans_script="${SCRIPTS_BASE}/extract_glycans_and_chains.tcl"
@@ -117,12 +118,11 @@ validate_scripts() {
     [[ -f "$align_trajectory_script" ]] || { log_error "Missing $align_trajectory_script"; exit 1; }
     [[ -f "$extract_glycans_script" ]] || { log_error "Missing $extract_glycans_script"; exit 1; }
     
-    # Export for use in other modules
     export ALIGN_TRAJECTORY_SCRIPT="$align_trajectory_script"
     export EXTRACT_GLYCANS_AND_CHAINS_SCRIPT="$extract_glycans_script"
 }
 
-# --- Input validation ---
+# Input: input.dat file path | Output: NRUNS value (number) or empty string if not found
 parse_input_dat() {
     local input_dat="$1"
     
@@ -135,7 +135,7 @@ parse_input_dat() {
     echo "$nruns"
 }
 
-# --- PDB prefix detection ---
+# Input: pred_directory_path | Output: PDB prefix (e.g., "start.pdb", "bg505.pdb") or return 1 if not found
 detect_pdb_prefix() {
     local pred_dir="$1"
     
@@ -143,7 +143,7 @@ detect_pdb_prefix() {
         if [[ -d "$candidate_dir" ]]; then
             local candidate_name
             candidate_name=$(basename "$candidate_dir")
-            echo "${candidate_name%_0}"  # Remove _0 suffix
+            echo "${candidate_name%_0}"
             return 0
         fi
     done
@@ -151,7 +151,7 @@ detect_pdb_prefix() {
     return 1
 }
 
-# --- Validation helpers ---
+# Input: value, parameter_name | Output: validates integer, exits with error if invalid
 validate_integer() {
     local value="$1"
     local name="$2"
@@ -159,7 +159,7 @@ validate_integer() {
     [[ "$value" =~ ^-?[0-9]+$ ]] || { log_error "Bad integer for $name: '$value'"; exit 1; }
 }
 
-# --- File cleanup ---
+# Input: none | Output: removes intermediate PDB files (C*.pdb, *_renum.pdb)
 cleanup_intermediate_files() {
     rm -f C*.pdb *_renum.pdb || true
 }

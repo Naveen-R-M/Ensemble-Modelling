@@ -174,7 +174,7 @@ process_single_frame() {
     
     # Determine starting residue index
     local starting_chain_number
-    starting_chain_number=$(get_starting_chain_number "$filename" "C")
+    starting_chain_number="${alignment_params[starting_chain_number]}"
     if [[ -z "$starting_chain_number" ]]; then
         log_warn "Could not determine starting chain number for $run_id"
         cleanup_intermediate_files

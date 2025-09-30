@@ -13,7 +13,7 @@ else
     exit 1
 fi
 
-# --- Alignment analysis (replaces compute_glycan_params.py) ---
+# Input: path to .ali alignment file | Output: echoes "aa_count slash_count before_first_slash_count"
 analyze_alignment() {
     local ali_file="$1"
     
@@ -63,7 +63,7 @@ analyze_alignment() {
     echo "$aa_count $slash_count $before_first_slash_count"
 }
 
-# --- Determine chain length from alignment ---
+# Input: slash_count (integer) | Output: echoes chain length (3 or 6) or returns 1 if invalid
 determine_chain_length() {
     local slash_count="$1"
     
@@ -77,7 +77,7 @@ determine_chain_length() {
     fi
 }
 
-# --- Main alignment processing function ---
+# Input: path to .ali file, associative array reference | Output: populates array with alignment parameters (aa_count, slash_count, first_chain_length, chain_len, first_chain_len_plus_one)
 process_alignment() {
     local ali_file="$1"
     local -n result_ref="$2"  # Pass associative array by reference

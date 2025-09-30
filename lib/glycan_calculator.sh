@@ -14,6 +14,7 @@ else
 fi
 
 # --- HETATM range detection ---
+# Input: path to PDB file | Output: echoes "hetatm_start hetatm_end" or returns 1 if no HETATM found
 get_hetatm_range() {
     local pdb_file="$1"
     
@@ -36,6 +37,7 @@ get_hetatm_range() {
 }
 
 # --- Equal glycan distribution calculation (always 3 glycan chains) ---
+# Input: hetatm_start, hetatm_end (integers) | Output: echoes "g1_start g1_end g2_start g2_end g3_start g3_end"
 calculate_equal_glycan_ranges() {
     local hetatm_start="$1"
     local hetatm_end="$2"
@@ -88,6 +90,7 @@ calculate_equal_glycan_ranges() {
 }
 
 # --- Main glycan calculation function ---
+# Input: path to sample PDB, chain_len, associative array reference | Output: populates array with glycan range parameters (g1_start, g1_end, g2_start, g2_end, g3_start, g3_end, hetatm_start, hetatm_end)
 calculate_glycan_parameters() {
     local sample_pdb="$1"
     local chain_len="$2"          # Chain length from alignment (for logging only)
@@ -134,6 +137,7 @@ calculate_glycan_parameters() {
 }
 
 # --- Alternative calculation methods (for future use) ---
+# Input: PDB file path, glyc.dat path, align.ali path | Output: placeholder (not implemented)
 calculate_attachment_based_ranges() {
     local pdb_file="$1"
     local glyc_file="$2"
@@ -144,6 +148,7 @@ calculate_attachment_based_ranges() {
     return 1
 }
 
+# Input: PDB file path | Output: placeholder (not implemented)
 calculate_residue_type_based_ranges() {
     local pdb_file="$1"
     

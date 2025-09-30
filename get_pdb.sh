@@ -143,6 +143,27 @@ for m in "$folder"/*; do
         continue
     fi
 
+
+    # Determine starting residue number from the template PDB file (matching the prefix)
+    template_pdb_file="$m/${pdb_prefix}"
+    
+    if [[ ! -f "$template_pdb_file" ]]; then
+        log_error "Could not find template PDB file: $template_pdb_file"
+        unset alignment_params glycan_params
+        continue
+    fi
+    
+    starting_chain_number=$(grep "^ATOM" "$template_pdb_file" | head -1 | awk '{print substr($0,23,4)+0}')
+    if [[ -z "$starting_chain_number" ]]; then
+        log_error "Could not extract starting residue number from $template_pdb_file"
+        unset alignment_params glycan_params
+        continue
+    fi
+    
+    log_info "Starting residue number from ${pdb_prefix}: $starting_chain_number"
+    
+    # Store in alignment_params for use during frame processing
+    alignment_params[starting_chain_number]="$starting_chain_number"
     # Initialize output file
     out_file="${out_dir}/$OUTPUT_FILE"
     : > "$out_file"
